@@ -17,7 +17,7 @@ def linear_attn(q, k, x, EPS=1e-7):
     return x
 
 
-class convMultiheadAttetionV2(nn.Module):
+class MultiheadAttetion(nn.Module):
     def __init__(self, convDim, numHeads, patchSize, qkScale=None, qkvBias=True, attn_drop=0.0, proj_drop=0.0):
         super().__init__()
         self.convDim = convDim
@@ -113,7 +113,7 @@ class speMultiAttn(nn.Module):
 class spaTransBlock(nn.Module):
     def __init__(self, convDim):
         super().__init__()
-        self.multiAttn = convMultiheadAttetionV2(convDim, 8, 1)
+        self.multiAttn = MultiheadAttetion(convDim, 8, 1)
         self.ffn = nn.Sequential(
             nn.Conv2d(convDim, convDim, 1, 1, 0),
             nn.GELU(),
