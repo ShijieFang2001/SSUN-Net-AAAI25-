@@ -2,21 +2,23 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 def linear_attn(q, k, x, EPS=1e-7):
-    l1, d1  = q.shape[-2:]
+    l1, d1 = q.shape[-2:]
     l2, d2 = x.shape[-2:]
     k = k.transpose(-2, -1)
-    if l1*d1*l2+l1*l2*d2<= d2*l2*d1+d2*d1*l1:
-        q = q@k
-        q = q/(q.sum(dim=-1, keepdim=True)+EPS)
-        x = q@x
+    if l1 * d1 * l2 + l1 * l2 * d2 <= d2 * l2 * d1 + d2 * d1 * l1:
+        q = q @ k
+        q = q / (q.sum(dim=-1, keepdim=True) + EPS)
+        x = q @ x
     else:
-        x = q@(k@x)
-        q = q@k.sum(dim=-1, keepdim=True) + EPS
-        x = x/q
+        x = q @ (k @ x)
+        q = q @ k.sum(dim=-1, keepdim=True) + EPS
+        x = x / q
     return x
-class convMultiheadAttetionV2(nn.Module):
 
+
+class convMultiheadAttetionV2(nn.Module):
     def __init__(self, convDim, numHeads, patchSize, qkScale=None, qkvBias=True, attn_drop=0.0, proj_drop=0.0):
         super().__init__()
         self.convDim = convDim
@@ -26,7 +28,6 @@ class convMultiheadAttetionV2(nn.Module):
         self.register_buffer('one', None)
         self.qkv = nn.Conv2d(self.convDim, self.convDim * 3, 1, 1, 0)
         self.proj = nn.Conv2d(self.convDim, self.convDim, 3, 1, 1)
-
     def forward(self, x, mask=None, padsize=0):
         B, C, H, W = x.shape
         qkv = self.qkv(x).reshape(B, 3, self.convDim, H, W).transpose(0, 1)
@@ -51,6 +52,7 @@ class convMultiheadAttetionV2(nn.Module):
         x = x.view(B, C, H, W)
         x = self.proj(x)
         return x
+
     def flops(self, x):
         B, C, H, W = x.shape
         d1 = C * self.patchSize ** 2  # for q and k
@@ -61,21 +63,11 @@ class convMultiheadAttetionV2(nn.Module):
         flops += min(l1 * d1 * l1 + l1 * l1 * d2, l1 * d1 * d2 + d1 * l1 * d2)
         flops += l1 * C * 9 * C  #
         return flops
-class FeedForward(nn.Module):
-    def __init__(self, dim):
-        super(FeedForward, self).__init__()
-        self.conv1 = nn.Conv2d(dim, dim, 1, 1, 0)
-        self.gelu1 = nn.GELU()
-        self.depthConv = nn.Conv2d(dim, dim, 3, 1, 1, groups=dim)
-        self.gelu2 = nn.GELU()
-        self.conv2 = nn.Conv2d(dim, dim, 1, 1, 0)
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.gelu1(x)
-        x = self.depthConv(x)
-        x = self.gelu2(x)
-        x = self.conv2(x)
-        return x
+
+
+
+
+
 class speMultiAttn(nn.Module):
     def __init__(self, convDim, numHeads=8, poolSize=4, ksize=9) -> None:
         super().__init__()
@@ -116,26 +108,40 @@ class speMultiAttn(nn.Module):
         x = x.view(B, C, H, W)
         x = self.proj(x)
         return x
-        # pass
+
+
+
 class spaTransBlock(nn.Module):
     def __init__(self, convDim):
         super().__init__()
         self.multiAttn = convMultiheadAttetionV2(convDim, 8, 1)
-        self.ffn = FeedForward(convDim)
+        self.ffn = nn.Sequential(
+            nn.Conv2d(convDim, convDim, 1, 1, 0),
+            nn.GELU(),
+            nn.Conv2d(convDim, convDim, 3, 1, 1, groups=convDim),
+            nn.GELU(),
+            nn.Conv2d(convDim, convDim, 1, 1, 0),
+        )
         self.reweight = nn.Parameter(torch.zeros(1)) if False else 1
+
     def forward(self, x):
         x = x + self.multiAttn(x) * self.reweight
         x = x + self.ffn(x) * self.reweight
         return x
+
 class speTransBlock(nn.Module):
     def __init__(self, convDim):
         super().__init__()
         self.multiattn = speMultiAttn(convDim)
-        self.ffn = FeedForward(convDim)
+        self.ffn = nn.Sequential(
+            nn.Conv2d(convDim, convDim, 1, 1, 0),
+            nn.GELU(),
+            nn.Conv2d(convDim, convDim, 3, 1, 1, groups=convDim),
+            nn.GELU(),
+            nn.Conv2d(convDim, convDim, 1, 1, 0),
+        )
         self.reweight = nn.Parameter(torch.zeros(1)) if False else 1
     def forward(self, x):
         x = x + self.multiattn(x) * self.reweight
         x = x + self.ffn(x) * self.reweight
         return x
-
-
